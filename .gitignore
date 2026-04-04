@@ -42,6 +42,10 @@ Thumbs.db
 # Jupyter
 .ipynb_checkpoints/
 
+# Triton models (ONNX weights)
+triton_models/*/1/*.onnx
+triton_models/*/1/*.onnx_data
+
 # Docker
 docker/volumes/
 

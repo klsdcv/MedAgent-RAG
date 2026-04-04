@@ -11,7 +11,12 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 # OpenAI
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = "gpt-4o"
-EMBEDDING_MODEL = "text-embedding-3-small"
+
+# 임베딩 (BGE-M3 via Triton)
+EMBEDDING_MODEL = "BAAI/bge-m3"
+EMBEDDING_DIM = 1024
+TRITON_URL = os.getenv("TRITON_URL", "http://localhost:8000")
+TRITON_MODEL_NAME = "bge_m3"
 
 # 공공데이터포털
 DATA_API_KEY = os.getenv("DATA_API_KEY")

@@ -53,28 +53,29 @@ LangGraph 기반 Multi-Agent 의약품 QA 시스템
 | Agent 오케스트레이션 | LangGraph, LangChain |
 | LLM | OpenAI GPT-4o |
 | 임베딩 | BGE-M3 (ONNX + Triton Inference Server) |
-| 검색 | Hybrid Search (ChromaDB Vector + BM25 + RRF) |
+| 검색 | Hybrid Search (ChromaDB Vector + OpenSearch BM25 + RRF) |
 | 벡터 DB | ChromaDB |
+| 키워드 검색 | OpenSearch 2.18 (nori 한국어 형태소 분석기) |
 | 데이터 | 공공데이터포털 식약처 API (e약은요, DUR) |
 | UI | Streamlit |
-| 배포 | Docker |
+| 배포 | Docker Compose (Triton + OpenSearch) |
 
 ## 검색 파이프라인
 
-### Hybrid Search (Vector + BM25)
+### Hybrid Search (Vector + OpenSearch BM25)
 
 ```
 [사용자 질의]
       │
       ├──▶ [BGE-M3 임베딩] → ChromaDB 벡터 검색 (의미 유사도)
       │
-      ├──▶ [BM25 토큰화] → BM25 키워드 검색 (정확 매칭)
+      ├──▶ [OpenSearch] → nori 한국어 형태소 분석 → BM25 키워드 검색 (정확 매칭)
       │
       └──▶ [RRF (Reciprocal Rank Fusion)] → 최종 순위 결정
 ```
 
-- **벡터 검색**: "두통약 추천" → 해열진통제 계열 의약품 매칭
-- **BM25 검색**: "타이레놀" → 정확한 약물명 매칭
+- **벡터 검색**: "두통약 추천" → 해열진통제 계열 의약품 매칭 (의미 기반)
+- **OpenSearch BM25**: "타이레놀" → 정확한 약물명 매칭 (nori 형태소 분석)
 - **RRF**: 두 결과를 가중 합산하여 re-ranking (vector 60% + BM25 40%)
 
 ### 임베딩 서빙
@@ -99,7 +100,7 @@ MedAgent-RAG/
 ├── src/
 │   ├── agents/              # Agent 노드 구현
 │   │   ├── supervisor.py    # 질의 분류 + 라우팅
-│   │   ├── drug_search.py   # 하이브리드 검색 (Vector + BM25)
+│   │   ├── drug_search.py   # 하이브리드 검색 (Vector + OpenSearch BM25)
 │   │   ├── interaction.py   # DUR API 약물 상호작용 확인
 │   │   ├── safety.py        # 임부금기/연령대금기 검색
 │   │   └── answer.py        # 최종 답변 생성
@@ -111,10 +112,11 @@ MedAgent-RAG/
 │   │   ├── collect_dur.py   # DUR API 수집
 │   │   ├── preprocess_drugs.py
 │   │   ├── preprocess_dur.py
-│   │   └── load_to_chroma.py
+│   │   ├── load_to_chroma.py
+│   │   └── load_to_opensearch.py
 │   ├── vectorstore/
-│   │   ├── triton_embedder.py  # Triton HTTP 임베딩 클라이언트
-│   │   └── bm25_index.py       # BM25 키워드 검색 인덱스
+│   │   ├── triton_embedder.py    # Triton HTTP 임베딩 클라이언트
+│   │   └── opensearch_client.py  # OpenSearch BM25 검색 클라이언트
 │   ├── tools/
 │   │   └── dur_api.py       # DUR 병용금기 API (LangChain Tool)
 │   ├── ui/                  # Streamlit UI
@@ -126,7 +128,8 @@ MedAgent-RAG/
 ├── triton_models/
 │   └── bge_m3/config.pbtxt # Triton 모델 설정
 ├── docker/
-│   └── docker-compose.triton.yml
+│   ├── docker-compose.yml         # Triton + OpenSearch
+│   └── opensearch.Dockerfile      # nori 플러그인 포함 이미지
 ├── tests/
 ├── requirements.txt
 └── .gitignore
@@ -149,23 +152,24 @@ cp .env.example .env
 # .env에 OPENAI_API_KEY, DATA_API_KEY, HF_TOKEN 입력
 ```
 
-### 2. 임베딩 서버 (Triton)
+### 2. 인프라 (Triton + OpenSearch)
 
 ```bash
 # BGE-M3 → ONNX 변환
 python scripts/convert_bge_m3_onnx.py
 
-# Triton 서버 실행
-docker compose -f docker/docker-compose.triton.yml up -d
+# Triton + OpenSearch 실행
+docker compose -f docker/docker-compose.yml up -d
 ```
 
 ### 3. 데이터 수집 및 적재
 
 ```bash
-# e약은요 수집 → 전처리 → ChromaDB 적재
+# e약은요 수집 → 전처리 → ChromaDB + OpenSearch 적재
 python -m src.data.collect_drugs
 python -m src.data.preprocess_drugs
 python -m src.data.load_to_chroma
+python -m src.data.load_to_opensearch
 
 # DUR 수집 → 전처리
 python -m src.data.collect_dur

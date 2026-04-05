@@ -1,24 +1,19 @@
-"""Drug Search Agent - 의약품 정보 벡터 검색 (RAG)."""
+"""Drug Search Agent - 하이브리드 검색 (Vector + BM25)."""
 
 import chromadb
-from langchain_openai import ChatOpenAI
 
-from src.config.settings import (
-    CHROMA_DB_PATH,
-    CHROMA_COLLECTION_DRUGS,
-    OPENAI_API_KEY,
-    OPENAI_MODEL,
-)
-from src.config.prompts import DRUG_SEARCH_SYSTEM_PROMPT
+from src.config.settings import CHROMA_DB_PATH, CHROMA_COLLECTION_DRUGS
 from src.graph.state import MedAgentState
 from src.vectorstore.triton_embedder import TritonEmbedder
+from src.vectorstore.bm25_index import BM25Index
 
 
 embedder = TritonEmbedder()
+bm25_index = BM25Index()
 
 
-def search_drugs(query: str, n_results: int = 5) -> list[dict]:
-    """ChromaDB에서 의약품 정보를 검색."""
+def search_vector(query: str, n_results: int = 10) -> list[dict]:
+    """ChromaDB 벡터 검색."""
     client = chromadb.PersistentClient(path=CHROMA_DB_PATH)
     collection = client.get_collection(CHROMA_COLLECTION_DRUGS)
 
@@ -40,16 +35,58 @@ def search_drugs(query: str, n_results: int = 5) -> list[dict]:
             "id": doc_id,
             "document": doc,
             "metadata": meta,
-            "similarity": 1 - dist,  # cosine distance → similarity
+            "vector_score": 1 - dist,
         })
 
     return items
 
 
+def search_bm25(query: str, n_results: int = 10) -> list[dict]:
+    """BM25 키워드 검색."""
+    return bm25_index.search(query, n_results=n_results)
+
+
+def hybrid_search(query: str, n_results: int = 5, vector_weight: float = 0.6) -> list[dict]:
+    """벡터 + BM25 하이브리드 검색 (RRF 기반 re-ranking).
+
+    Reciprocal Rank Fusion으로 두 검색 결과를 합산.
+    """
+    vector_results = search_vector(query, n_results=n_results * 2)
+    bm25_results = search_bm25(query, n_results=n_results * 2)
+
+    # RRF 스코어 계산
+    k = 60  # RRF 상수
+    scores: dict[str, float] = {}
+    doc_map: dict[str, dict] = {}
+
+    for rank, item in enumerate(vector_results):
+        doc_id = item["id"]
+        scores[doc_id] = scores.get(doc_id, 0) + vector_weight / (k + rank + 1)
+        doc_map[doc_id] = item
+
+    bm25_weight = 1 - vector_weight
+    for rank, item in enumerate(bm25_results):
+        doc_id = item["id"]
+        scores[doc_id] = scores.get(doc_id, 0) + bm25_weight / (k + rank + 1)
+        if doc_id not in doc_map:
+            doc_map[doc_id] = item
+
+    # 스코어 기준 정렬
+    ranked_ids = sorted(scores, key=lambda x: scores[x], reverse=True)[:n_results]
+
+    results = []
+    for doc_id in ranked_ids:
+        item = doc_map[doc_id]
+        item["hybrid_score"] = scores[doc_id]
+        results.append(item)
+
+    return results
+
+
 def drug_search_node(state: MedAgentState) -> dict:
     """Drug Search Agent 노드 함수."""
     query = state["query"]
-    results = search_drugs(query)
+    results = hybrid_search(query)
 
     return {
         "drug_results": results,

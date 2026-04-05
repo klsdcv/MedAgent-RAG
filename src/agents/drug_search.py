@@ -1,15 +1,14 @@
-"""Drug Search Agent - 하이브리드 검색 (Vector + BM25)."""
+"""Drug Search Agent - 하이브리드 검색 (ChromaDB Vector + OpenSearch BM25 + RRF)."""
 
 import chromadb
 
 from src.config.settings import CHROMA_DB_PATH, CHROMA_COLLECTION_DRUGS
 from src.graph.state import MedAgentState
 from src.vectorstore.triton_embedder import TritonEmbedder
-from src.vectorstore.bm25_index import BM25Index
+from src.vectorstore import opensearch_client
 
 
 embedder = TritonEmbedder()
-bm25_index = BM25Index()
 
 
 def search_vector(query: str, n_results: int = 10) -> list[dict]:
@@ -41,18 +40,18 @@ def search_vector(query: str, n_results: int = 10) -> list[dict]:
     return items
 
 
-def search_bm25(query: str, n_results: int = 10) -> list[dict]:
-    """BM25 키워드 검색."""
-    return bm25_index.search(query, n_results=n_results)
+def search_keyword(query: str, n_results: int = 10) -> list[dict]:
+    """OpenSearch BM25 키워드 검색."""
+    return opensearch_client.search(query, n_results=n_results)
 
 
 def hybrid_search(query: str, n_results: int = 5, vector_weight: float = 0.6) -> list[dict]:
-    """벡터 + BM25 하이브리드 검색 (RRF 기반 re-ranking).
+    """벡터 + OpenSearch BM25 하이브리드 검색 (RRF 기반 re-ranking).
 
     Reciprocal Rank Fusion으로 두 검색 결과를 합산.
     """
     vector_results = search_vector(query, n_results=n_results * 2)
-    bm25_results = search_bm25(query, n_results=n_results * 2)
+    bm25_results = search_keyword(query, n_results=n_results * 2)
 
     # RRF 스코어 계산
     k = 60  # RRF 상수

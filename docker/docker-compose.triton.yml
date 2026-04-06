@@ -7,6 +7,13 @@ services:
       - "8002:8002"   # Metrics
     volumes:
       - ../triton_models:/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     command: >
       tritonserver
       --model-repository=/models

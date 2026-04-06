@@ -67,6 +67,7 @@ def run_query(query: str, thread_id: str | None = None) -> dict:
     initial_state = {
         "query": query,
         "query_type": "",
+        "search_keywords": [],
         "drug_results": [],
         "interaction_results": [],
         "safety_results": [],
@@ -106,6 +107,7 @@ def stream_query(query: str, thread_id: str | None = None) -> Generator[str, Non
     initial_state = {
         "query": query,
         "query_type": "",
+        "search_keywords": [],
         "drug_results": [],
         "interaction_results": [],
         "safety_results": [],

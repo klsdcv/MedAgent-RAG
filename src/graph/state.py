@@ -5,6 +5,7 @@ import operator
 class MedAgentState(TypedDict):
     query: str                  # 사용자 질의
     query_type: str             # 분류 결과 (simple, interaction, safety, complex)
+    search_keywords: list       # Supervisor가 추출한 검색 키워드
     drug_results: list          # Drug Search Agent 결과
     interaction_results: list   # Interaction Agent 결과
     safety_results: list        # Safety Agent 결과

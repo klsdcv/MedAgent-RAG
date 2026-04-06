@@ -87,8 +87,24 @@ def hybrid_search(query: str, n_results: int = 5, vector_weight: float = 0.6) ->
 def drug_search_node(state: MedAgentState) -> dict:
     """Drug Search Agent 노드 함수."""
     query = state["query"]
-    candidates = hybrid_search(query, n_results=10)
-    results = reranker.rerank(query, candidates, top_k=5)
+    search_keywords = state.get("search_keywords", [query])
+
+    if len(search_keywords) <= 1:
+        # 단일 키워드 검색
+        search_term = search_keywords[0] if search_keywords else query
+        candidates = hybrid_search(search_term, n_results=10)
+        results = reranker.rerank(query, candidates, top_k=5)
+    else:
+        # 복수 키워드: 각각 검색 후 reranker로 합산
+        all_candidates = []
+        seen_ids = set()
+        for kw in search_keywords:
+            candidates = hybrid_search(kw, n_results=6)
+            for c in candidates:
+                if c["id"] not in seen_ids:
+                    seen_ids.add(c["id"])
+                    all_candidates.append(c)
+        results = reranker.rerank(query, all_candidates, top_k=5)
 
     return {
         "drug_results": results,

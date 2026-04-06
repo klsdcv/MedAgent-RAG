@@ -15,30 +15,70 @@ llm = ChatOpenAI(
 )
 
 
-def build_context(state: MedAgentState) -> str:
-    """Agent 결과들을 컨텍스트 텍스트로 합침."""
+def build_context(state: MedAgentState) -> tuple[str, list[dict]]:
+    """Agent 결과들을 번호가 붙은 컨텍스트 텍스트로 합침.
+
+    Returns:
+        (context_text, citations) 튜플.
+        citations: [{"index": 1, "item_name": ..., "item_seq": ..., "source": ...}, ...]
+    """
     sections = []
+    citations = []
+    ref_num = 1
 
     drug_results = state.get("drug_results", [])
     if drug_results:
         drug_texts = []
-        for r in drug_results[:3]:
-            drug_texts.append(f"[{r['metadata']['item_name']}]\n{r['document']}")
+        for r in drug_results[:5]:
+            name = r["metadata"]["item_name"]
+            doc_preview = r["document"][:200].replace("\n", " ")
+            drug_texts.append(f"[{ref_num}] {r['document']}")
+            citations.append({
+                "index": ref_num,
+                "item_name": name,
+                "item_seq": r["metadata"].get("item_seq", ""),
+                "source": "의약품 정보 (e약은요)",
+                "preview": doc_preview,
+            })
+            ref_num += 1
         sections.append("## 의약품 검색 결과\n" + "\n\n".join(drug_texts))
 
     interaction_results = state.get("interaction_results", [])
     if interaction_results:
-        sections.append("## 약물 상호작용 정보\n" + "\n".join(
-            str(r) for r in interaction_results[:5]
-        ))
+        inter_texts = []
+        for r in interaction_results[:5]:
+            r_type = r.get("type", "") if isinstance(r, dict) else ""
+            r_result = r.get("result", "") if isinstance(r, dict) else str(r)
+            display = f"[{r_type}] {r_result}" if r_type else str(r_result)
+            inter_texts.append(f"[{ref_num}] {display}")
+            citations.append({
+                "index": ref_num,
+                "item_name": r_type or "약물 상호작용",
+                "item_seq": "",
+                "source": "DUR 병용금기 정보",
+                "preview": str(r_result)[:200],
+            })
+            ref_num += 1
+        sections.append("## 약물 상호작용 정보\n" + "\n".join(inter_texts))
 
     safety_results = state.get("safety_results", [])
     if safety_results:
-        sections.append("## 복용 안전성 정보\n" + "\n".join(
-            str(r) for r in safety_results[:5]
-        ))
+        safety_texts = []
+        for r in safety_results[:5]:
+            doc = r.get("document", str(r)) if isinstance(r, dict) else str(r)
+            name = r.get("metadata", {}).get("item_name", "") if isinstance(r, dict) else ""
+            safety_texts.append(f"[{ref_num}] {doc}")
+            citations.append({
+                "index": ref_num,
+                "item_name": name or doc.split("\n")[0][:50],
+                "item_seq": "",
+                "source": "DUR 안전성 정보",
+                "preview": doc[:200],
+            })
+            ref_num += 1
+        sections.append("## 복용 안전성 정보\n" + "\n".join(safety_texts))
 
-    return "\n\n".join(sections)
+    return "\n\n".join(sections), citations
 
 
 def build_history_prompt(messages: list[dict]) -> str:
@@ -58,7 +98,7 @@ def build_history_prompt(messages: list[dict]) -> str:
 def answer_node(state: MedAgentState) -> dict:
     """Answer Agent 노드 함수."""
     query = state["query"]
-    context = build_context(state)
+    context, citations = build_context(state)
     history = build_history_prompt(state.get("messages", []))
 
     history_section = f"\n{history}\n" if history else ""
@@ -77,14 +117,6 @@ def answer_node(state: MedAgentState) -> dict:
         SystemMessage(content=ANSWER_SYSTEM_PROMPT),
         HumanMessage(content=prompt),
     ])
-
-    # 출처 목록 생성
-    citations = []
-    for r in state.get("drug_results", [])[:3]:
-        citations.append({
-            "item_name": r["metadata"]["item_name"],
-            "item_seq": r["metadata"]["item_seq"],
-        })
 
     return {
         "final_answer": response.content,

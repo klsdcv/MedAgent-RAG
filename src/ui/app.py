@@ -65,9 +65,13 @@ with st.sidebar:
             citations = meta.get("citations", [])
             if citations:
                 st.markdown("---")
-                st.markdown("**참고 의약품**")
+                st.markdown("**참조 출처**")
                 for c in citations:
-                    st.markdown(f"- {c['item_name']}")
+                    idx = c.get("index", "")
+                    name = c.get("item_name", "")
+                    source = c.get("source", "")
+                    st.markdown(f"**[{idx}]** {name}")
+                    st.caption(f"  {source}")
     else:
         st.info("질문을 입력하면 Agent 실행 흐름이 여기에 표시됩니다")
 
@@ -98,6 +102,19 @@ if not st.session_state.messages:
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
+        # assistant 답변 아래에 출처 표시
+        if msg["role"] == "assistant":
+            citations = msg.get("meta", {}).get("citations", [])
+            if citations:
+                with st.expander(f"참조 출처 ({len(citations)}건)"):
+                    for c in citations:
+                        idx = c.get("index", "")
+                        name = c.get("item_name", "")
+                        source = c.get("source", "")
+                        preview = c.get("preview", "")
+                        st.markdown(f"**[{idx}] {name}**  \n`{source}`")
+                        if preview:
+                            st.caption(preview)
 
 # ── 입력 처리 ─────────────────────────────────────────────────────────────────
 query = st.chat_input("의약품에 대해 질문하세요")

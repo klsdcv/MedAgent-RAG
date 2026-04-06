@@ -1,4 +1,7 @@
-"""Triton Inference Server를 통한 BGE-M3 임베딩 클라이언트."""
+"""Triton Inference Server를 통한 BGE-M3 임베딩 클라이언트.
+
+Triton 서버 미연결 시 sentence-transformers로 로컬 fallback.
+"""
 
 import numpy as np
 import requests
@@ -6,7 +9,10 @@ from transformers import AutoTokenizer
 
 
 class TritonEmbedder:
-    """Triton HTTP API로 BGE-M3 임베딩을 생성하는 클라이언트."""
+    """Triton HTTP API로 BGE-M3 임베딩을 생성하는 클라이언트.
+
+    Triton 서버가 응답하지 않으면 sentence-transformers로 로컬 실행.
+    """
 
     def __init__(
         self,
@@ -19,6 +25,33 @@ class TritonEmbedder:
         self.model_name = model_name
         self.max_length = max_length
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+        self._local_model = None
+        self._use_local = self._check_triton_unavailable()
+
+    def _check_triton_unavailable(self) -> bool:
+        """Triton 서버 가용 여부 확인. 불가능하면 True 반환."""
+        try:
+            url = f"{self.triton_url}/v2/models/{self.model_name}/ready"
+            resp = requests.get(url, timeout=2)
+            if resp.status_code == 200:
+                return False
+        except Exception:
+            pass
+        print(f"[TritonEmbedder] Triton 서버 미연결 → sentence-transformers 로컬 모드로 전환")
+        return True
+
+    def _get_local_model(self):
+        """sentence-transformers 모델 lazy 로딩."""
+        if self._local_model is None:
+            from sentence_transformers import SentenceTransformer
+            self._local_model = SentenceTransformer("BAAI/bge-m3")
+        return self._local_model
+
+    def _embed_local(self, texts: list[str]) -> list[list[float]]:
+        """sentence-transformers로 로컬 임베딩."""
+        model = self._get_local_model()
+        embeddings = model.encode(texts, normalize_embeddings=True, show_progress_bar=False)
+        return embeddings.tolist()
 
     def _tokenize(self, texts: list[str]) -> dict:
         encoded = self.tokenizer(
@@ -66,6 +99,9 @@ class TritonEmbedder:
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         """텍스트 리스트를 임베딩 벡터로 변환."""
+        if self._use_local:
+            return self._embed_local(texts)
+
         tokens = self._tokenize(texts)
         payload = self._build_request(tokens)
 

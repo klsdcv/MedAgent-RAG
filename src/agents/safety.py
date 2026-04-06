@@ -20,7 +20,7 @@ def search_safety_info(query: str, n_results: int = 5) -> list[dict]:
 
     try:
         collection = client.get_collection(CHROMA_COLLECTION_SAFETY)
-    except ValueError:
+    except Exception:
         return []
 
     query_embedding = embedder.embed_query(query)

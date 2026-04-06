@@ -20,8 +20,12 @@ st.title("💊 MedAgent-RAG")
 st.caption("의약품 정보 · 약물 상호작용 · 복용 안전성 질문에 답변합니다")
 
 # ── 세션 상태 초기화 ─────────────────────────────────────────────────────────
+import uuid
+
 if "messages" not in st.session_state:
     st.session_state.messages = []
+if "thread_id" not in st.session_state:
+    st.session_state.thread_id = str(uuid.uuid4())
 
 # ── 사이드바: Agent 흐름 ──────────────────────────────────────────────────────
 with st.sidebar:
@@ -68,8 +72,10 @@ with st.sidebar:
         st.info("질문을 입력하면 Agent 실행 흐름이 여기에 표시됩니다")
 
     st.markdown("---")
+    st.caption(f"세션 ID: `{st.session_state.thread_id[:8]}...`")
     if st.button("대화 초기화"):
         st.session_state.messages = []
+        st.session_state.thread_id = str(uuid.uuid4())
         st.rerun()
 
 # ── 예시 질문 버튼 ────────────────────────────────────────────────────────────
@@ -110,7 +116,7 @@ if query:
     with st.chat_message("assistant"):
         with st.spinner("Agent 실행 중..."):
             try:
-                result = run_query(query)
+                result = run_query(query, thread_id=st.session_state.thread_id)
                 answer = result.get("final_answer", "답변을 생성하지 못했습니다.")
             except Exception as e:
                 answer = f"오류가 발생했습니다: {e}"

@@ -1,6 +1,9 @@
 """LangGraph 기반 Multi-Agent 워크플로 정의."""
 
+import uuid
+
 from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.memory import MemorySaver
 
 from src.graph.state import MedAgentState
 from src.agents.supervisor import supervisor_node, route_by_query_type
@@ -34,15 +37,31 @@ def build_graph() -> StateGraph:
     return graph
 
 
-def create_app():
+def create_app(checkpointer: MemorySaver | None = None):
     """컴파일된 워크플로 앱을 반환."""
     graph = build_graph()
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer)
 
 
-def run_query(query: str) -> dict:
-    """질의를 실행하고 결과를 반환."""
-    app = create_app()
+# 전역 checkpointer (메모리 기반 세션 유지)
+_checkpointer = MemorySaver()
+_app = create_app(checkpointer=_checkpointer)
+
+
+def run_query(query: str, thread_id: str | None = None) -> dict:
+    """질의를 실행하고 결과를 반환.
+
+    Args:
+        query: 사용자 질의
+        thread_id: 대화 세션 ID. None이면 새 세션 생성.
+
+    Returns:
+        최종 상태 dict
+    """
+    if thread_id is None:
+        thread_id = str(uuid.uuid4())
+
+    config = {"configurable": {"thread_id": thread_id}}
 
     initial_state = {
         "query": query,
@@ -53,7 +72,8 @@ def run_query(query: str) -> dict:
         "final_answer": "",
         "citations": [],
         "agent_trace": [],
+        "messages": [{"role": "user", "content": query}],
     }
 
-    result = app.invoke(initial_state)
+    result = _app.invoke(initial_state, config=config)
     return result

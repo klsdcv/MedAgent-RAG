@@ -1,4 +1,5 @@
-from typing import TypedDict
+from typing import TypedDict, Annotated
+import operator
 
 
 class MedAgentState(TypedDict):
@@ -10,3 +11,4 @@ class MedAgentState(TypedDict):
     final_answer: str           # 최종 답변
     citations: list             # 출처 목록
     agent_trace: list           # 호출된 Agent 이력
+    messages: Annotated[list, operator.add]  # 대화 히스토리 (멀티턴)

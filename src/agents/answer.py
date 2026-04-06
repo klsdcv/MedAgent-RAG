@@ -41,13 +41,30 @@ def build_context(state: MedAgentState) -> str:
     return "\n\n".join(sections)
 
 
+def build_history_prompt(messages: list[dict]) -> str:
+    """이전 대화 히스토리를 프롬프트 텍스트로 변환."""
+    # 마지막 user 메시지 제외하고 최근 6턴만 포함
+    history = messages[:-1][-6:] if len(messages) > 1 else []
+    if not history:
+        return ""
+
+    lines = ["## 이전 대화"]
+    for msg in history:
+        role = "사용자" if msg["role"] == "user" else "어시스턴트"
+        lines.append(f"{role}: {msg['content']}")
+    return "\n".join(lines)
+
+
 def answer_node(state: MedAgentState) -> dict:
     """Answer Agent 노드 함수."""
     query = state["query"]
     context = build_context(state)
+    history = build_history_prompt(state.get("messages", []))
+
+    history_section = f"\n{history}\n" if history else ""
 
     prompt = f"""다음 정보를 바탕으로 사용자의 질문에 답변하세요.
-
+{history_section}
 ## 사용자 질문
 {query}
 
@@ -73,4 +90,5 @@ def answer_node(state: MedAgentState) -> dict:
         "final_answer": response.content,
         "citations": citations,
         "agent_trace": state.get("agent_trace", []) + ["answer"],
+        "messages": [{"role": "assistant", "content": response.content}],
     }

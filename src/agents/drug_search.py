@@ -1,14 +1,16 @@
-"""Drug Search Agent - 하이브리드 검색 (ChromaDB Vector + OpenSearch BM25 + RRF)."""
+"""Drug Search Agent - 하이브리드 검색 (ChromaDB Vector + OpenSearch BM25 + RRF + Rerank)."""
 
 import chromadb
 
 from src.config.settings import CHROMA_DB_PATH, CHROMA_COLLECTION_DRUGS
 from src.graph.state import MedAgentState
 from src.vectorstore.triton_embedder import TritonEmbedder
+from src.vectorstore.reranker import Reranker
 from src.vectorstore import opensearch_client
 
 
 embedder = TritonEmbedder()
+reranker = Reranker()
 
 
 def search_vector(query: str, n_results: int = 10) -> list[dict]:
@@ -85,7 +87,8 @@ def hybrid_search(query: str, n_results: int = 5, vector_weight: float = 0.6) ->
 def drug_search_node(state: MedAgentState) -> dict:
     """Drug Search Agent 노드 함수."""
     query = state["query"]
-    results = hybrid_search(query)
+    candidates = hybrid_search(query, n_results=10)
+    results = reranker.rerank(query, candidates, top_k=5)
 
     return {
         "drug_results": results,

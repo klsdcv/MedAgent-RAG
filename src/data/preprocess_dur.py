@@ -61,7 +61,7 @@ def preprocess():
     all_items = []
 
     # 특정연령대금기
-    age_path = RAW_DIR / "dur_특정연령대금기.json"
+    age_path = RAW_DIR / "dur_spcifyagrdetaboo.json"
     if age_path.exists():
         with open(age_path, "r", encoding="utf-8") as f:
             raw = json.load(f)
@@ -70,7 +70,7 @@ def preprocess():
         print(f"특정연령대금기: {len(raw)}건 전처리")
 
     # 임부금기
-    preg_path = RAW_DIR / "dur_임부금기.json"
+    preg_path = RAW_DIR / "dur_pwnmtaboo.json"
     if preg_path.exists():
         with open(preg_path, "r", encoding="utf-8") as f:
             raw = json.load(f)

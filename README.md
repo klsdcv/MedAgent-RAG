@@ -14,7 +14,7 @@ LangGraph 기반 Multi-Agent 의약품 QA 시스템
 ## 아키텍처
 
 ```
-[사용자] → [Streamlit UI] → [Supervisor Agent] (질의 분류 + 동적 라우팅)
+[사용자] → [Streamlit UI] → [Supervisor Agent] (질의 분류 + 검색 키워드 추출)
                                     │
                     ┌───────────────┼───────────────┐
                     ▼               ▼               ▼
@@ -25,7 +25,7 @@ LangGraph 기반 Multi-Agent 의약품 QA 시스템
                     │               └───────────────┘
                     └───────────────────────────────▶
                                     ▼
-                            [Answer Agent] → GPT-4o 답변 생성 + 출처 인용
+                            [Answer Agent] → GPT-4o 답변 생성 + 인라인 출처 인용 [1][2]
                                     │
                             [LangGraph Checkpointer] (멀티턴 대화 유지)
 ```
@@ -34,11 +34,11 @@ LangGraph 기반 Multi-Agent 의약품 QA 시스템
 
 | Agent | 역할 | 구현 |
 |-------|------|------|
-| **Supervisor** | 질의 유형 분류 (simple/interaction/safety/complex) + Agent 라우팅 | LangGraph conditional_edges |
-| **Drug Search** | 의약품 정보 검색 + 재랭킹 | Hybrid Search (Vector + BM25 + RRF) → Cross-Encoder Reranker |
+| **Supervisor** | 질의 분류 + LLM 기반 검색 키워드 추출 (구어체 → 의학 용어 변환) | LangGraph conditional_edges, JSON 응답 |
+| **Drug Search** | 의약품 정보 검색 + 재랭킹 (복합 질의 시 키워드별 분리 검색) | Hybrid Search (Vector + BM25 + RRF) → Cross-Encoder Reranker |
 | **Interaction** | 약물 상호작용 확인 | DUR 병용금기 API 실시간 호출 (LangChain Tool Use) |
 | **Safety** | 복용 주의사항 확인 (임부금기, 연령대금기) | ChromaDB safety 컬렉션 벡터 검색 |
-| **Answer** | 최종 답변 합성 + 출처 인용 + 이전 대화 맥락 반영 | GPT-4o |
+| **Answer** | 최종 답변 합성 + 인라인 출처 인용 [1][2] + 이전 대화 맥락 반영 | GPT-4o |
 
 ### 질의 유형별 라우팅
 
@@ -71,10 +71,12 @@ LangGraph 기반 Multi-Agent 의약품 QA 시스템
 ### Hybrid Search + Cross-Encoder Rerank
 
 ```
-[사용자 질의]
+[사용자 질의] → [Supervisor LLM] → 검색 키워드 추출
+                                    (구어체 → 의학 용어 변환)
+                                    예: "관절약이랑 소화제" → ["관절 글루코사민", "소화제 소화효소"]
       │
       ├──▶ [BGE-M3 임베딩] → ChromaDB 벡터 검색 (의미 유사도) ──┐
-      │                                                          ▼
+      │       (키워드별 분리 검색)                                ▼
       ├──▶ [OpenSearch] → nori 형태소 분석 → BM25 검색 ──▶ [RRF 통합 (top 10)]
       │                                                          │
       └──────────────────────────────────────────────────▶ [BGE-Reranker Cross-Encoder]
@@ -90,8 +92,9 @@ LangGraph 기반 Multi-Agent 의약품 QA 시스템
 ### 임베딩 서빙
 
 - **모델**: BAAI/bge-m3 (1024차원, 다국어)
-- **서빙**: ONNX 변환 → Triton Inference Server (GPU)
+- **서빙**: ONNX 변환 → Triton Inference Server (GPU, RTX 3050 8GB 테스트 완료)
 - **변환**: `scripts/convert_bge_m3_onnx.py`
+- **성능**: 문장당 ~150ms (GPU)
 
 ## 데이터
 

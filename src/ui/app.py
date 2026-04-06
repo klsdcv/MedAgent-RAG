@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import streamlit as st
 
-from src.graph.workflow import run_query
+from src.graph.workflow import run_query, stream_query
 
 # ── 페이지 설정 ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -112,17 +112,20 @@ if query:
     with st.chat_message("user"):
         st.markdown(query)
 
-    # Agent 실행
+    # Agent 실행 (스트리밍)
     with st.chat_message("assistant"):
-        with st.spinner("Agent 실행 중..."):
-            try:
-                result = run_query(query, thread_id=st.session_state.thread_id)
-                answer = result.get("final_answer", "답변을 생성하지 못했습니다.")
-            except Exception as e:
-                answer = f"오류가 발생했습니다: {e}"
-                result = {}
-
-        st.markdown(answer)
+        try:
+            st.write_stream(stream_query(query, thread_id=st.session_state.thread_id))
+            # 스트리밍 완료 후 최종 상태 조회 (citations, trace 등)
+            from src.graph.workflow import _app
+            config = {"configurable": {"thread_id": st.session_state.thread_id}}
+            snapshot = _app.get_state(config)
+            result = dict(snapshot.values) if snapshot and snapshot.values else {}
+            answer = result.get("final_answer", "")
+        except Exception as e:
+            answer = f"오류가 발생했습니다: {e}"
+            result = {}
+            st.markdown(answer)
 
     # 메시지 저장 (meta에 trace/citations 포함)
     st.session_state.messages.append({

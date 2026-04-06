@@ -1,6 +1,7 @@
 """LangGraph 기반 Multi-Agent 워크플로 정의."""
 
 import uuid
+from collections.abc import Generator
 
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
@@ -77,3 +78,59 @@ def run_query(query: str, thread_id: str | None = None) -> dict:
 
     result = _app.invoke(initial_state, config=config)
     return result
+
+
+_NODE_LABELS = {
+    "supervisor": "🎯 Supervisor — 질의 유형 분석 중...",
+    "drug_search": "🔍 Drug Search — 의약품 검색 중...",
+    "interaction": "⚡ Interaction — 약물 상호작용 확인 중...",
+    "safety": "🛡️ Safety — 복용 안전성 확인 중...",
+    "answer": "✍️ Answer — 답변 생성 중...",
+}
+
+
+def stream_query(query: str, thread_id: str | None = None) -> Generator[str, None, dict]:
+    """질의를 스트리밍으로 실행.
+
+    노드 실행마다 상태 메시지를 yield하고,
+    Answer 노드 완료 후 최종 답변 텍스트를 yield.
+
+    Returns:
+        Generator — 각 yield 값은 UI에 출력할 텍스트 조각
+    """
+    if thread_id is None:
+        thread_id = str(uuid.uuid4())
+
+    config = {"configurable": {"thread_id": thread_id}}
+
+    initial_state = {
+        "query": query,
+        "query_type": "",
+        "drug_results": [],
+        "interaction_results": [],
+        "safety_results": [],
+        "final_answer": "",
+        "citations": [],
+        "agent_trace": [],
+        "messages": [{"role": "user", "content": query}],
+    }
+
+    final_state = {}
+    seen_nodes = set()
+
+    for chunk in _app.stream(initial_state, config=config, stream_mode="updates"):
+        for node_name, state_update in chunk.items():
+            if node_name not in seen_nodes:
+                seen_nodes.add(node_name)
+                label = _NODE_LABELS.get(node_name, f"⚙️ {node_name}...")
+                yield f"\n`{label}`\n"
+
+            final_state.update(state_update)
+
+    # 최종 답변 출력
+    answer = final_state.get("final_answer", "")
+    if answer:
+        yield "\n\n"
+        yield answer
+
+    return final_state

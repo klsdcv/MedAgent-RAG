@@ -53,7 +53,11 @@ def hybrid_search(query: str, n_results: int = 5, vector_weight: float = 0.6) ->
     Reciprocal Rank Fusion으로 두 검색 결과를 합산.
     """
     vector_results = search_vector(query, n_results=n_results * 2)
-    bm25_results = search_keyword(query, n_results=n_results * 2)
+    try:
+        bm25_results = search_keyword(query, n_results=n_results * 2)
+    except Exception:
+        # OpenSearch 미가동 시 벡터 검색만으로 진행
+        bm25_results = []
 
     # RRF 스코어 계산
     k = 60  # RRF 상수

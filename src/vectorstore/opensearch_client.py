@@ -63,7 +63,7 @@ def create_index(client: OpenSearch | None = None):
     print(f"인덱스 '{INDEX_NAME}' 생성 완료")
 
 
-def search(query: str, n_results: int = 10, client: OpenSearch | None = None) -> list[dict]:
+def search(query: str, n_results: int = 10, index: str = INDEX_NAME, client: OpenSearch | None = None) -> list[dict]:
     """BM25 키워드 검색."""
     client = client or get_client()
 
@@ -82,7 +82,7 @@ def search(query: str, n_results: int = 10, client: OpenSearch | None = None) ->
         },
     }
 
-    resp = client.search(index=INDEX_NAME, body=body)
+    resp = client.search(index=index, body=body)
 
     results = []
     for hit in resp["hits"]["hits"]:
@@ -90,13 +90,69 @@ def search(query: str, n_results: int = 10, client: OpenSearch | None = None) ->
         results.append({
             "id": src.get("item_seq", hit["_id"]),
             "document": src.get("document", ""),
-            "metadata": {
-                "item_name": src.get("item_name", ""),
-                "company": src.get("company", ""),
-                "item_seq": src.get("item_seq", ""),
-                "update_date": src.get("update_date", ""),
-            },
+            "metadata": {k: v for k, v in src.items() if k != "document"},
             "bm25_score": hit["_score"],
         })
 
     return results
+
+
+SAFETY_INDEX = "safety"
+
+
+def create_safety_index(client: OpenSearch | None = None):
+    """safety 인덱스 생성 (임부금기, 연령대금기)."""
+    client = client or get_client()
+
+    if client.indices.exists(index=SAFETY_INDEX):
+        client.indices.delete(index=SAFETY_INDEX)
+
+    body = {
+        "settings": {
+            "analysis": {
+                "analyzer": {
+                    "korean": {
+                        "type": "custom",
+                        "tokenizer": "nori_tokenizer",
+                        "filter": ["lowercase"],
+                    }
+                }
+            },
+            "number_of_shards": 1,
+            "number_of_replicas": 0,
+        },
+        "mappings": {
+            "properties": {
+                "item_name": {
+                    "type": "text",
+                    "analyzer": "korean",
+                    "fields": {"keyword": {"type": "keyword"}},
+                },
+                "ingr_name": {
+                    "type": "text",
+                    "analyzer": "korean",
+                    "fields": {"keyword": {"type": "keyword"}},
+                },
+                "type": {"type": "keyword"},
+                "item_seq": {"type": "keyword"},
+                "ingr_code": {"type": "keyword"},
+                "company": {"type": "keyword"},
+                "prohbt_content": {
+                    "type": "text",
+                    "analyzer": "korean",
+                },
+                "document": {
+                    "type": "text",
+                    "analyzer": "korean",
+                },
+            }
+        },
+    }
+
+    client.indices.create(index=SAFETY_INDEX, body=body)
+    print(f"인덱스 '{SAFETY_INDEX}' 생성 완료")
+
+
+def search_safety(query: str, n_results: int = 5, client: OpenSearch | None = None) -> list[dict]:
+    """safety 인덱스 BM25 검색."""
+    return search(query, n_results=n_results, index=SAFETY_INDEX, client=client)

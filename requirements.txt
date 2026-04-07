@@ -19,8 +19,13 @@ chromadb>=1.5.0
 # Search
 opensearch-py>=3.0.0
 
+# API
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+
 # UI
 streamlit>=1.38.0
+httpx>=0.27.0
 
 # Infra
 requests>=2.31.0

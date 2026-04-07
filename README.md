@@ -14,40 +14,48 @@ LangGraph 기반 Multi-Agent 의약품 QA 시스템
 ## 아키텍처
 
 ```
-[사용자] → [Streamlit UI] → [Supervisor Agent] (질의 분류 + 검색 키워드 추출)
-                                    │
-                    ┌───────────────┼───────────────┐
-                    ▼               ▼               ▼
-            [Drug Search]   [Interaction]      [Safety]
-          Hybrid Search +   DUR API 실시간     ChromaDB
-          Cross-Encoder       Tool Use        금기정보 검색
-            Reranker                │               │
-                    │               └───────────────┘
-                    └───────────────────────────────▶
+[사용자] → [Streamlit UI] → [FastAPI 백엔드] → [Query Rewrite] (구어체 → 검색 최적화 쿼리)
+                                                       │
+                                               [Supervisor Agent] (질의 분류 + 키워드 추출)
+                                                       │
+                                    ┌──────────────────┼───────────────┐
+                                    ▼                  ▼               ▼
+                            [Drug Search]       [Interaction]      [Safety]
+                          Hybrid Search +       DUR API 실시간     OpenSearch
+                          Cross-Encoder           Tool Use        금기정보 검색
+                            Reranker                   │               │
+                                    │                  └───────────────┘
                                     ▼
-                            [Answer Agent] → GPT-4o 답변 생성 + 인라인 출처 인용 [1][2]
-                                    │
-                            [LangGraph Checkpointer] (멀티턴 대화 유지)
+                              [Grader] ──(irrelevant)──▶ [CRAG Rewrite] → 재검색 (최대 2회)
+                                    │(relevant)
+                                    └───────────────────────────────▶
+                                                    ▼
+                                            [Answer Agent] → GPT-4o 답변 생성 + 인라인 출처 인용 [1][2]
+                                                    │
+                                            [LangGraph Checkpointer] (멀티턴 대화 유지)
 ```
 
 ### Agent 상세
 
 | Agent | 역할 | 구현 |
 |-------|------|------|
-| **Supervisor** | 질의 분류 + LLM 기반 검색 키워드 추출 (구어체 → 의학 용어 변환) | LangGraph conditional_edges, JSON 응답 |
+| **Query Rewrite** | 구어체 질의를 검색 최적화 쿼리로 전처리 | GPT-4o (성분명 추출, 의학 용어 정규화) |
+| **Supervisor** | 질의 분류 + LLM 기반 검색 키워드 추출 | LangGraph conditional_edges, JSON 응답 |
 | **Drug Search** | 의약품 정보 검색 + 재랭킹 (복합 질의 시 키워드별 분리 검색) | Hybrid Search (Vector + BM25 + RRF) → Cross-Encoder Reranker |
+| **Grader** | 검색 결과 관련성 평가 (Corrective RAG) | GPT-4o (relevant/partial/irrelevant 판정) |
+| **CRAG Rewrite** | Grader가 irrelevant 판정 시 쿼리 재작성 후 재검색 (최대 2회) | GPT-4o |
 | **Interaction** | 약물 상호작용 확인 | DUR 병용금기 API 실시간 호출 (LangChain Tool Use) |
-| **Safety** | 복용 주의사항 확인 (임부금기, 연령대금기) | ChromaDB safety 컬렉션 벡터 검색 |
+| **Safety** | 복용 주의사항 확인 (임부금기, 연령대금기) | OpenSearch safety 인덱스 BM25 검색 |
 | **Answer** | 최종 답변 합성 + 인라인 출처 인용 [1][2] + 이전 대화 맥락 반영 | GPT-4o |
 
 ### 질의 유형별 라우팅
 
 | 질의 유형 | 호출 경로 | 예시 |
 |-----------|----------|------|
-| 단순 약 정보 | Supervisor → Drug Search → Answer | "타이레놀 효능 알려줘" |
-| 약물 상호작용 | Supervisor → Drug Search → Interaction → Answer | "타이레놀이랑 아스피린 같이 먹어도 돼?" |
-| 복용 주의 | Supervisor → Drug Search → Safety → Answer | "임산부가 먹을 수 있는 감기약?" |
-| 복합 질의 | Supervisor → Drug Search → Interaction → Safety → Answer | "혈압약 먹고 있는데 두통약 추천해줘" |
+| 단순 약 정보 | Query Rewrite → Supervisor → Drug Search → Grader → Answer | "타이레놀 효능 알려줘" |
+| 약물 상호작용 | Query Rewrite → Supervisor → Drug Search → Grader → Interaction → Answer | "타이레놀이랑 아스피린 같이 먹어도 돼?" |
+| 복용 주의 | Query Rewrite → Supervisor → Drug Search → Grader → Safety → Answer | "임산부가 먹을 수 있는 감기약?" |
+| 복합 질의 | Query Rewrite → Supervisor → Drug Search → Grader → Interaction → Safety → Answer | "혈압약 먹고 있는데 두통약 추천해줘" |
 
 ## 기술 스택
 
@@ -63,15 +71,16 @@ LangGraph 기반 Multi-Agent 의약품 QA 시스템
 | 대화 관리 | LangGraph MemorySaver (멀티턴 Checkpointing) |
 | 평가 | RAGAS (faithfulness, answer_relevancy, context_precision, context_recall) |
 | 데이터 | 공공데이터포털 식약처 API (e약은요, DUR) |
-| UI | Streamlit (실시간 스트리밍) |
-| 배포 | Docker Compose (Triton + OpenSearch) |
+| API 서버 | FastAPI + Uvicorn (SSE 스트리밍) |
+| UI | Streamlit (FastAPI SSE 연동) |
+| 배포 | Docker Compose (FastAPI + Streamlit + Triton + OpenSearch) |
 
 ## 검색 파이프라인
 
 ### Hybrid Search + Cross-Encoder Rerank
 
 ```
-[사용자 질의] → [Supervisor LLM] → 검색 키워드 추출
+[사용자 질의] → [Query Rewrite] → 구어체 최적화 → [Supervisor LLM] → 검색 키워드 추출
                                     (구어체 → 의학 용어 변환)
                                     예: "관절약이랑 소화제" → ["관절 글루코사민", "소화제 소화효소"]
       │
@@ -112,7 +121,9 @@ MedAgent-RAG/
 ├── src/
 │   ├── agents/              # Agent 노드 구현
 │   │   ├── supervisor.py    # 질의 분류 + 라우팅
+│   │   ├── query_rewriter.py # 쿼리 전처리 + CRAG 재작성
 │   │   ├── drug_search.py   # 하이브리드 검색 + Reranker
+│   │   ├── grader.py        # 검색 결과 관련성 평가 (CRAG)
 │   │   ├── interaction.py   # DUR API 약물 상호작용 확인
 │   │   ├── safety.py        # 임부금기/연령대금기 검색
 │   │   └── answer.py        # 최종 답변 생성 (멀티턴 맥락 포함)
@@ -134,8 +145,13 @@ MedAgent-RAG/
 │   │   └── evaluator.py          # RAGAS 평가 파이프라인
 │   ├── tools/
 │   │   └── dur_api.py       # DUR 병용금기 API (LangChain Tool)
+│   ├── api/                 # FastAPI 백엔드
+│   │   ├── main.py          # FastAPI 앱 (CORS, health check)
+│   │   ├── schemas.py       # Pydantic 요청/응답 모델
+│   │   └── routes/
+│   │       └── query.py     # 질의/스트리밍/세션 엔드포인트
 │   ├── ui/
-│   │   └── app.py           # Streamlit UI (스트리밍, 멀티턴)
+│   │   └── app.py           # Streamlit UI (FastAPI SSE 연동)
 │   └── config/
 │       ├── settings.py
 │       └── prompts.py
@@ -148,6 +164,8 @@ MedAgent-RAG/
 │   └── bge_m3/config.pbtxt
 ├── docker/
 │   ├── docker-compose.yml
+│   ├── Dockerfile.api       # FastAPI 서비스
+│   ├── Dockerfile.ui        # Streamlit 서비스
 │   └── opensearch.Dockerfile
 ├── requirements.txt
 └── .gitignore
@@ -191,8 +209,14 @@ python -m src.data.preprocess_dur
 ### 4. 실행
 
 ```bash
-streamlit run src/ui/app.py
+# FastAPI 백엔드
+uvicorn src.api.main:app --host 0.0.0.0 --port 8080
+
+# Streamlit UI (별도 터미널)
+API_BASE_URL=http://localhost:8080 streamlit run src/ui/app.py
 ```
+
+API 문서: `http://localhost:8080/docs`
 
 ### 5. 평가
 

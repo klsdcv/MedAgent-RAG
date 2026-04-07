@@ -1,13 +1,14 @@
-"""MedAgent-RAG Streamlit UI."""
+"""MedAgent-RAG Streamlit UI — FastAPI 백엔드 연동."""
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+import os
+import json
+import uuid
 
 import streamlit as st
+import httpx
 
-from src.graph.workflow import run_query, stream_query
+# ── API 설정 ─────────────────────────────────────────────────────────────────
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8080")
 
 # ── 페이지 설정 ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -20,8 +21,6 @@ st.title("💊 MedAgent-RAG")
 st.caption("의약품 정보 · 약물 상호작용 · 복용 안전성 질문에 답변합니다")
 
 # ── 세션 상태 초기화 ─────────────────────────────────────────────────────────
-import uuid
-
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "thread_id" not in st.session_state:
@@ -51,8 +50,11 @@ with st.sidebar:
             if trace:
                 st.markdown("**실행 순서**")
                 agent_icons = {
+                    "query_rewrite": "📝 Query Rewrite",
                     "supervisor": "🎯 Supervisor",
                     "drug_search": "🔍 Drug Search",
+                    "grader": "📋 Grader",
+                    "crag_rewrite": "🔄 CRAG Rewrite",
                     "interaction": "⚡ Interaction",
                     "safety": "🛡️ Safety",
                     "answer": "✍️ Answer",
@@ -102,7 +104,6 @@ if not st.session_state.messages:
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
-        # assistant 답변 아래에 출처 표시
         if msg["role"] == "assistant":
             citations = msg.get("meta", {}).get("citations", [])
             if citations:
@@ -115,6 +116,50 @@ for msg in st.session_state.messages:
                         st.markdown(f"**[{idx}] {name}**  \n`{source}`")
                         if preview:
                             st.caption(preview)
+
+# ── SSE 스트리밍 호출 ─────────────────────────────────────────────────────────
+
+
+def call_api_stream(query: str, thread_id: str):
+    """FastAPI SSE 엔드포인트를 호출하여 스트리밍 응답을 받음."""
+    url = f"{API_BASE_URL}/v1/query/stream"
+    payload = {"query": query, "thread_id": thread_id}
+
+    answer_parts = []
+    meta = {}
+
+    with httpx.Client(timeout=120.0) as client:
+        with client.stream("POST", url, json=payload) as response:
+            response.raise_for_status()
+            for line in response.iter_lines():
+                if not line.startswith("data: "):
+                    continue
+                raw = line[6:]  # "data: " 이후
+                try:
+                    event = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+
+                event_type = event.get("event", "")
+
+                if event_type == "node_start":
+                    yield event.get("data", "")
+                elif event_type == "answer":
+                    text = event.get("data", "")
+                    answer_parts.append(text)
+                    yield text
+                elif event_type == "done":
+                    meta["query_type"] = event.get("query_type", "")
+                    meta["agent_trace"] = event.get("agent_trace", [])
+                    meta["citations"] = event.get("citations", [])
+                    meta["thread_id"] = event.get("thread_id", thread_id)
+                elif event_type == "error":
+                    yield f"\n오류: {event.get('data', '')}"
+
+    # 메타 데이터를 세션에 임시 저장
+    st.session_state._last_meta = meta
+    st.session_state._last_answer = "".join(answer_parts)
+
 
 # ── 입력 처리 ─────────────────────────────────────────────────────────────────
 query = st.chat_input("의약품에 대해 질문하세요")
@@ -129,30 +174,34 @@ if query:
     with st.chat_message("user"):
         st.markdown(query)
 
-    # Agent 실행 (스트리밍)
+    # Agent 실행 (SSE 스트리밍)
     with st.chat_message("assistant"):
         try:
-            st.write_stream(stream_query(query, thread_id=st.session_state.thread_id))
-            # 스트리밍 완료 후 최종 상태 조회 (citations, trace 등)
-            from src.graph.workflow import _app
-            config = {"configurable": {"thread_id": st.session_state.thread_id}}
-            snapshot = _app.get_state(config)
-            result = dict(snapshot.values) if snapshot and snapshot.values else {}
-            answer = result.get("final_answer", "")
+            st.write_stream(call_api_stream(query, thread_id=st.session_state.thread_id))
+            meta = getattr(st.session_state, "_last_meta", {})
+            answer = getattr(st.session_state, "_last_answer", "")
+        except httpx.ConnectError:
+            answer = "API 서버에 연결할 수 없습니다. FastAPI 서버가 실행 중인지 확인하세요."
+            meta = {}
+            st.markdown(answer)
         except Exception as e:
             answer = f"오류가 발생했습니다: {e}"
-            result = {}
+            meta = {}
             st.markdown(answer)
 
-    # 메시지 저장 (meta에 trace/citations 포함)
+    # 메시지 저장
     st.session_state.messages.append({
         "role": "assistant",
         "content": answer,
         "meta": {
-            "query_type": result.get("query_type", ""),
-            "agent_trace": result.get("agent_trace", []),
-            "citations": result.get("citations", []),
+            "query_type": meta.get("query_type", ""),
+            "agent_trace": meta.get("agent_trace", []),
+            "citations": meta.get("citations", []),
         },
     })
+
+    # 임시 데이터 정리
+    st.session_state.pop("_last_meta", None)
+    st.session_state.pop("_last_answer", None)
 
     st.rerun()

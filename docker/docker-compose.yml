@@ -9,9 +9,11 @@ services:
       - ../.env
     environment:
       - TRITON_URL=http://triton:8000
+      - REDIS_URL=redis://redis:6379/0
     depends_on:
       - triton
       - opensearch
+      - redis
     networks:
       - medagent
 
@@ -48,6 +50,14 @@ services:
       --model-repository=/models
       --strict-model-config=false
       --log-verbose=1
+    networks:
+      - medagent
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
     networks:
       - medagent
 

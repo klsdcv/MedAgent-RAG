@@ -7,6 +7,7 @@ from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 
 from src.graph.state import MedAgentState
+from src.cache.redis_client import get_cached_result, set_cached_result
 from src.agents.supervisor import supervisor_node, route_by_query_type
 from src.agents.drug_search import drug_search_node
 from src.agents.interaction import interaction_node
@@ -103,6 +104,11 @@ def run_query(query: str, thread_id: str | None = None) -> dict:
     Returns:
         최종 상태 dict
     """
+    # 캐시 조회
+    cached = get_cached_result(query)
+    if cached is not None:
+        return cached
+
     if thread_id is None:
         thread_id = str(uuid.uuid4())
 
@@ -110,6 +116,10 @@ def run_query(query: str, thread_id: str | None = None) -> dict:
     initial_state = _build_initial_state(query)
 
     result = _app.invoke(initial_state, config=config)
+
+    # 캐시 저장
+    set_cached_result(query, result)
+
     return result
 
 

@@ -95,13 +95,13 @@
 
 **작업 목록:**
 
-- [ ] `docker/docker-compose.yml`에 `redis` 서비스 추가
-- [ ] `src/cache/redis_client.py` 생성
+- [x] `docker/docker-compose.yml`에 `redis` 서비스 추가
+- [x] `src/cache/redis_client.py` 생성
   - 질의 → `sha256` 해시 키 생성
   - TTL: 24시간 (의약품 정보 변동 적음)
-- [ ] `src/graph/workflow.py` 수정
+- [x] `src/graph/workflow.py` 수정
   - `run_query()` 앞뒤에 캐시 조회/저장 래핑
-- [ ] `requirements.txt`에 `redis` 추가
+- [x] `requirements.txt`에 `redis` 추가
 
 ---
 
@@ -111,11 +111,11 @@
 
 **작업 목록:**
 
-- [ ] `scripts/convert_reranker_onnx.py` 생성
+- [x] `scripts/convert_reranker_onnx.py` 생성
   - BGE-Reranker-v2-M3 → ONNX 변환 스크립트
-- [ ] `triton_models/bge_reranker/` 디렉토리 구성
+- [x] `triton_models/bge_reranker/` 디렉토리 구성
   - `config.pbtxt` 작성, ONNX 모델 배치
-- [ ] `src/vectorstore/reranker.py` 수정
+- [x] `src/vectorstore/reranker.py` 수정
   - Triton HTTP API 호출 방식으로 변경
   - Triton 미연결 시 기존 CPU fallback 유지
 

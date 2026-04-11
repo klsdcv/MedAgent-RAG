@@ -127,11 +127,11 @@
 
 **작업 목록:**
 
-- [ ] LangSmith 계정 생성 및 API 키 발급
-- [ ] `.env`에 `LANGCHAIN_API_KEY`, `LANGCHAIN_TRACING_V2=true` 추가
-- [ ] `src/config/settings.py` 수정
+- [x] LangSmith 계정 생성 및 API 키 발급
+- [x] `.env`에 `LANGCHAIN_API_KEY`, `LANGCHAIN_TRACING_V2=true` 추가
+- [x] `src/config/settings.py` 수정
   - LangSmith 환경변수 로드
-- [ ] LangSmith 대시보드에서 확인할 항목 정리
+- [x] LangSmith 대시보드에서 확인할 항목 정리
   - 노드별 실행 시간
   - 토큰 사용량 (GPT-4o 비용 추적)
   - CRAG 재검색 발생 빈도

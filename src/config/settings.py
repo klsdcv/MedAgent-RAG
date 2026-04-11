@@ -22,6 +22,11 @@ TRITON_MODEL_NAME = "bge_m3"
 DATA_API_KEY = os.getenv("DATA_API_KEY")
 DATA_API_BASE_URL = "http://apis.data.go.kr/1471000"
 
+# LangSmith
+LANGCHAIN_TRACING_V2 = os.getenv("LANGCHAIN_TRACING_V2", "false")
+LANGCHAIN_API_KEY = os.getenv("LANGCHAIN_API_KEY")
+LANGCHAIN_PROJECT = os.getenv("LANGCHAIN_PROJECT", "MedAgent-RAG")
+
 # ChromaDB
 CHROMA_DB_PATH = str(PROJECT_ROOT / "chroma_db")
 CHROMA_COLLECTION_DRUGS = "drugs"

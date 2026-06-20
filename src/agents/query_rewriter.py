@@ -126,6 +126,9 @@ def crag_rewrite_node(state: MedAgentState) -> dict:
     return {
         "query": rewritten,
         "rewritten_query": rewritten,
+        # 재작성된 쿼리가 실제 재검색에 반영되도록 search_keywords도 갱신한다.
+        # (미갱신 시 drug_search가 기존 키워드로 동일 검색을 반복해 CRAG 자가교정이 무력화됨)
+        "search_keywords": [rewritten],
         "drug_results": [],  # 이전 결과 초기화
         "agent_trace": state.get("agent_trace", []) + ["crag_rewrite"],
     }

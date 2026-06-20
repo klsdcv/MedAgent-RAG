@@ -74,7 +74,18 @@ def classify_query(query: str) -> tuple[str, list[str]]:
 
 
 def supervisor_node(state: MedAgentState) -> dict:
-    """Supervisor Agent 노드 함수."""
+    """Supervisor Agent 노드 함수.
+
+    질의 분류·키워드 추출은 최초 1회만 LLM으로 수행한다.
+    interaction/safety 처리 후 라우팅을 위해 재방문할 때는 이미 state에
+    저장된 분류 결과를 재사용하여 중복 LLM 호출을 제거한다.
+    """
+    # 이미 분류된 경우(재방문) — LLM 재호출 없이 라우팅만 수행
+    if state.get("query_type"):
+        return {
+            "agent_trace": state.get("agent_trace", []) + ["supervisor"],
+        }
+
     query = state["query"]
     query_type, search_keywords = classify_query(query)
 

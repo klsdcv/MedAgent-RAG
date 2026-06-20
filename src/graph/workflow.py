@@ -14,21 +14,23 @@ from src.agents.interaction import interaction_node
 from src.agents.safety import safety_node
 from src.agents.answer import answer_node
 from src.agents.grader import grader_node, route_after_grading
-from src.agents.query_rewriter import query_rewrite_node, crag_rewrite_node
+from src.agents.query_rewriter import crag_rewrite_node
 
 
 def build_graph() -> StateGraph:
     """MedAgent RAG 워크플로 그래프를 생성.
 
     흐름:
-        entry → query_rewrite → supervisor → drug_search → grader
+        entry → supervisor → drug_search → grader
           → (relevant) supervisor → ... → answer → END
           → (irrelevant, attempts < 2) crag_rewriter → drug_search → grader (루프)
+
+    Supervisor가 분류와 동시에 검색 키워드를 추출하므로 별도 진입 전처리 노드는
+    두지 않는다. 검색 실패 시의 쿼리 재작성은 crag_rewriter가 담당한다.
     """
     graph = StateGraph(MedAgentState)
 
     # 노드 등록
-    graph.add_node("query_rewrite", query_rewrite_node)
     graph.add_node("supervisor", supervisor_node)
     graph.add_node("drug_search", drug_search_node)
     graph.add_node("grader", grader_node)
@@ -37,9 +39,8 @@ def build_graph() -> StateGraph:
     graph.add_node("safety", safety_node)
     graph.add_node("answer", answer_node)
 
-    # 진입점: query_rewrite → supervisor
-    graph.set_entry_point("query_rewrite")
-    graph.add_edge("query_rewrite", "supervisor")
+    # 진입점: supervisor
+    graph.set_entry_point("supervisor")
 
     # supervisor → 조건부 라우팅
     graph.add_conditional_edges("supervisor", route_by_query_type)
@@ -79,7 +80,7 @@ def _build_initial_state(query: str) -> dict:
     """질의로부터 초기 상태를 생성."""
     return {
         "query": query,
-        "original_query": "",
+        "original_query": query,
         "query_type": "",
         "search_keywords": [],
         "drug_results": [],
@@ -124,7 +125,6 @@ def run_query(query: str, thread_id: str | None = None) -> dict:
 
 
 _NODE_LABELS = {
-    "query_rewrite": "📝 Query Rewrite — 질의 최적화 중...",
     "supervisor": "🎯 Supervisor — 질의 유형 분석 중...",
     "drug_search": "🔍 Drug Search — 의약품 검색 중...",
     "grader": "📋 Grader — 검색 결과 평가 중...",

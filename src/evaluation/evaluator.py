@@ -5,16 +5,24 @@ from pathlib import Path
 
 from datasets import Dataset
 from ragas import evaluate
+from ragas.embeddings import LangchainEmbeddingsWrapper
+from ragas.llms import LangchainLLMWrapper
 from ragas.metrics import (
     faithfulness,
     answer_relevancy,
     context_precision,
     context_recall,
 )
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from src.graph.workflow import run_query
 
+
+_RAGAS_LLM = LangchainLLMWrapper(ChatOpenAI(model="gpt-4o", temperature=0))
+_RAGAS_EMBEDDINGS = LangchainEmbeddingsWrapper(OpenAIEmbeddings(model="text-embedding-3-small"))
+
 EVAL_PATH = Path(__file__).parent.parent.parent / "data" / "eval" / "eval_dataset.json"
+RECORDS_PATH = Path(__file__).parent.parent.parent / "data" / "eval" / "eval_records.json"
 
 
 def collect_predictions(eval_items: list[dict]) -> list[dict]:
@@ -69,6 +77,8 @@ def run_ragas(records: list[dict]) -> dict:
     result = evaluate(
         dataset,
         metrics=[faithfulness, answer_relevancy, context_precision, context_recall],
+        llm=_RAGAS_LLM,
+        embeddings=_RAGAS_EMBEDDINGS,
     )
     return result
 
@@ -90,16 +100,25 @@ def run_evaluation(save_path: Path | None = None) -> dict:
     print("워크플로 실행 중...\n")
     records = collect_predictions(eval_items)
 
+    # 예측 체크포인트 저장 — 이후 RAGAS 단계가 실패해도 예측을 재활용할 수 있도록.
+    RECORDS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(RECORDS_PATH, "w", encoding="utf-8") as f:
+        json.dump(records, f, ensure_ascii=False, indent=2)
+    print(f"예측 체크포인트 저장: {RECORDS_PATH}")
+
     print("\nRAGAS 평가 실행 중...")
     ragas_result = run_ragas(records)
 
+    # RAGAS 0.4.x: result[metric]은 샘플별 점수 리스트이므로 to_pandas()로 집계한다.
+    df = ragas_result.to_pandas()
+    metric_names = ["faithfulness", "answer_relevancy", "context_precision", "context_recall"]
+
+    def _nanmean(values: list) -> float:
+        nums = [float(v) for v in values if v is not None and not (v != v)]  # NaN 제외
+        return sum(nums) / len(nums) if nums else 0.0
+
     # 전체 점수
-    scores = {
-        "faithfulness": float(ragas_result["faithfulness"]),
-        "answer_relevancy": float(ragas_result["answer_relevancy"]),
-        "context_precision": float(ragas_result["context_precision"]),
-        "context_recall": float(ragas_result["context_recall"]),
-    }
+    scores = {m: _nanmean(df[m].tolist()) for m in metric_names if m in df.columns}
 
     # 유형별 점수
     by_type: dict[str, dict[str, list[float]]] = {}
@@ -108,7 +127,7 @@ def run_evaluation(save_path: Path | None = None) -> dict:
         if qt not in by_type:
             by_type[qt] = {m: [] for m in scores}
 
-        row = ragas_result.to_pandas().iloc[i]
+        row = df.iloc[i]
         for metric in scores:
             val = row.get(metric)
             if val is not None and not (val != val):  # NaN 제외

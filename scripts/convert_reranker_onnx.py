@@ -25,7 +25,12 @@ def convert():
     model.eval()
 
     # 더미 입력 생성 (query-document pair)
-    dummy_pairs = [["약물 상호작용", "아세트아미노펜과 이부프로펜의 병용"]]
+    # batch=1 더미는 ONNX export 시 batch 차원이 상수(1)로 고정되는 문제가 있어
+    # batch>=2 더미로 트레이싱하여 dynamic batch를 보존한다.
+    dummy_pairs = [
+        ["약물 상호작용", "아세트아미노펜과 이부프로펜의 병용"],
+        ["복용 안전성", "타이레놀은 공복에 복용해도 되나요"],
+    ]
     inputs = tokenizer(
         dummy_pairs,
         padding=True,

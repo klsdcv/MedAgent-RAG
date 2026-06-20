@@ -59,7 +59,7 @@ class Reranker:
             pairs,
             padding=True,
             truncation=True,
-            max_length=512,
+            max_length=256,
             return_tensors="np",
         )
 

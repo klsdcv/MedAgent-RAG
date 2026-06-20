@@ -45,6 +45,16 @@ Thumbs.db
 # Triton models (ONNX weights)
 triton_models/*/1/*.onnx
 triton_models/*/1/*.onnx_data
+triton_models/*/1/*.onnx.data
+triton_models/*/1/*.data
+
+# Eval 생성 산출물 (입력 dataset은 추적, 결과/체크포인트는 미추적)
+data/eval/eval_results.json
+data/eval/eval_records.json
+data/eval/baseline_results.json
+
+# Stray logs / 잡동사니
+*.log
 
 # Docker
 docker/volumes/

@@ -20,7 +20,8 @@ _client: redis.Redis | None = None
 def _get_client() -> redis.Redis:
     global _client
     if _client is None:
-        _client = redis.from_url(_REDIS_URL, decode_responses=True)
+        # protocol=2 (RESP2): Redis 5.x 등 HELLO(RESP3) 미지원 서버와 호환
+        _client = redis.from_url(_REDIS_URL, decode_responses=True, protocol=2)
     return _client
 
 
@@ -37,7 +38,7 @@ def get_cached_result(query: str) -> dict | None:
         data = client.get(_make_key(query))
         if data is not None:
             return json.loads(data)
-    except redis.ConnectionError:
+    except (redis.ConnectionError, redis.RedisError, OSError):
         return None
     return None
 
@@ -60,5 +61,5 @@ def set_cached_result(query: str, result: dict) -> None:
             "rewritten_query": result.get("rewritten_query", ""),
         }
         client.setex(_make_key(query), _TTL_SECONDS, json.dumps(cacheable, ensure_ascii=False))
-    except redis.ConnectionError:
+    except (redis.ConnectionError, redis.RedisError, OSError):
         pass

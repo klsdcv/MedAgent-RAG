@@ -13,25 +13,32 @@ LangGraph 기반 Multi-Agent 의약품 QA 시스템
 
 ## 아키텍처
 
-```
-[사용자] → [Streamlit UI] → [FastAPI 백엔드] → [Supervisor Agent] (질의 분류 + 검색 키워드 추출)
-                                                       │           (구어체 → 의학 용어 정규화, 1회만 분류)
-                                                       │
-                                    ┌──────────────────┼───────────────┐
-                                    ▼                  ▼               ▼
-                            [Drug Search]       [Interaction]      [Safety]
-                          Hybrid Search +       DUR API 실시간     OpenSearch
-                          Cross-Encoder           Tool Use        금기정보 검색
-                            Reranker                   │               │
-                                    │                  └───────────────┘
-                                    ▼
-                              [Grader] ──(irrelevant)──▶ [CRAG Rewrite] → 재검색 (최대 2회)
-                                    │(relevant)
-                                    └───────────────────────────────▶
-                                                    ▼
-                                            [Answer Agent] → GPT-4o 답변 생성 + 인라인 출처 인용 [1][2]
-                                                    │
-                                            [LangGraph Checkpointer] (멀티턴 대화 유지)
+```mermaid
+flowchart TD
+    U([사용자]) --> UI[Streamlit UI]
+    UI --> API[FastAPI 백엔드]
+    API --> SUP{{"Supervisor Agent<br/>질의 분류 + 검색 키워드 추출<br/>구어체 → 의학 용어, 분류 1회"}}
+
+    SUP -->|drug_search| DS["Drug Search<br/>Hybrid Search + Cross-Encoder Reranker"]
+    DS --> GR{"Grader<br/>관련성 평가 · CRAG"}
+    GR -->|"irrelevant"| CR["CRAG Rewrite<br/>쿼리 재작성 · 키워드 갱신"]
+    CR -->|"재검색 (최대 2회)"| DS
+    GR -->|"relevant / partial"| SUP
+
+    SUP -->|interaction| INT["Interaction<br/>DUR API 실시간 Tool Use"]
+    SUP -->|safety| SAF["Safety<br/>OpenSearch 금기정보 검색"]
+    INT --> SUP
+    SAF --> SUP
+
+    SUP -->|answer| ANS["Answer Agent<br/>GPT-4o 답변 + 인라인 출처 인용 [1][2]"]
+    ANS --> FIN([END])
+
+    CP[("LangGraph Checkpointer<br/>멀티턴 대화 유지")] -.-> SUP
+
+    classDef agent fill:#e3f2fd,stroke:#1976d2,color:#0d2b45;
+    classDef io fill:#f3e5f5,stroke:#7b1fa2,color:#2e1437;
+    class SUP,DS,GR,CR,INT,SAF,ANS agent;
+    class UI,API,CP io;
 ```
 
 ### Agent 상세

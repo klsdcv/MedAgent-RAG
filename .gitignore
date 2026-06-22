@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Env / secrets
+.env
+.env.local
+*.key
+*.pem
+service-account*.json
+gcp-credentials*.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Tooling
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Project
+_reference/
+data/raw/
+data/processed/
+data/embeddings/
+*.log
+
+# Claude
+.claude/settings.local.json

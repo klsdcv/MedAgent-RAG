@@ -220,11 +220,73 @@ bash deploy/05_deploy_ui_cloudrun.sh
 
 ---
 
-## 8. 한계 및 향후 개선
+## 8. 하이브리드 RRF 검색 (Vertex AI Search + Vector Search)
 
-- **CRAG grader + rewriter 루프**가 ADK의 sub_agent 자체 판단으로 단순화 → 명시적 `LoopAgent` 도입 가능
-- **하이브리드 검색** 통합 (Vertex AI Search + Vector Search를 RRF로 합치는 단계 추가)
-- **리랭커** (Vertex Ranking API) 추가
-- **세션 이력 영속화** (Agent Engine SessionService → Firestore)
-- **응답 캐시** (Memorystore Redis)
-- **평가 자동화** (원본의 eval 데이터셋 포팅)
+```mermaid
+flowchart LR
+  Q[사용자 질의]
+  S[Vertex AI Search<br/>sparse + semantic<br/>top 20]
+  V[Vector Search<br/>dense KNN<br/>top 20]
+  RRF["RRF<br/>k=60<br/>Σ 1/(k+rank_i)"]
+  OUT[합산 정렬 top 10<br/>+ matched_by]
+
+  Q --> S
+  Q --> V
+  S --> RRF
+  V --> RRF
+  RRF --> OUT
+```
+
+- **공식**: `RRF(d) = Σ_i 1 / (k + rank_i(d))` (Cormack et al. 2009, k=60 표준)
+- **장점**: 정규화 불필요 (각 검색기가 다른 점수 분포여도 OK), 한쪽 장애 시 graceful degrade
+- **결과 각 항목에 `matched_by`** = `["sparse"|"dense"|both]` — 양쪽 모두 매칭된 게 가장 신뢰
+
+## 9. 세션 영속화
+
+- **Agent Engine 자체가 영속 SessionService 제공** — `create_session()`/`list_sessions()`/`get_session()`로 user_id별 세션 관리, 컨테이너 재시작에도 보존
+- **Streamlit user_id 안정화**: URL `?uid=...` query param으로 유지. 새로고침/탭 가로질러 동일 사용자
+- **자동 reuse**: 진입 시 `list_sessions(user_id=...)`로 가장 최근 세션 찾아 이어감
+- **이력 복원**: `get_session()`의 events에서 user/assistant 메시지 복원해 UI에 그대로 표시
+- **새 대화 버튼**: 사이드바에서 명시적 새 세션 생성
+
+> Firestore SessionService 백엔드는 self-host ADK 환경에서 필요. Vertex Agent Engine 위에선 자체 영속 인프라가 우선이라 중복.
+
+## 10. RAGAS 평가 결과
+
+원본의 `data/eval/eval_dataset.json` (20문항: simple 7 / interaction 6 / safety 7)
+을 그대로 사용. 평가 LLM은 Vertex Gemini 2.5 Flash, 임베딩은 `text-multilingual-embedding-002`.
+
+### v1 vs v2 비교
+
+| 메트릭 | v1 (drug_search만 hybrid) | v2 (3개 agent 전부 hybrid + timeout 300s) |
+| --- | --- | --- |
+| faithfulness | nan (timeout) | **0.6388** |
+| answer_relevancy | 0.6065 | 0.5810 |
+| context_precision | 0.0000 | 0.1667 |
+| context_recall | 0.3125 | **0.4000** |
+
+### v2 query_type별
+
+| query_type | faithfulness | answer_relevancy | context_precision | context_recall |
+| --- | --- | --- | --- | --- |
+| simple (단일 약품) | **0.914** | 0.558 | 0.000 | 0.286 |
+| interaction (상호작용) | 0.667 | **0.710** | nan | **0.750** |
+| safety (특수 인구) | 0.340 | 0.493 | 0.200 | 0.214 |
+| **overall** | 0.639 | 0.581 | 0.167 | 0.400 |
+
+### 인사이트
+
+- **simple 0.914 faithfulness** — 단일 약품 질의에선 검색 컨텍스트에 충실, 할루시네이션 거의 없음
+- **interaction 0.75 recall** — hybrid 통일이 두 약품을 함께 검색해 끌어오는 데 명확히 효과
+- **safety 낮은 점수** — 평가셋의 ground_truth가 "NSAIDs는 임신 중 금기" 같은 일반 의학지식 위주인데, e약은요는 약품 단위 본문이라 매칭 어려움. **데이터셋 보강 필요**
+- **context_precision 낮음 (0.17)** — RRF 후 랭킹이 ground_truth 매칭 기준 정렬과 어긋남. 리랭커(Vertex Ranking API) 추가가 다음 큰 개선 포인트
+- **Timeout 일부 잔존** — Gemini Flash 동시 호출 시 ResourceExhausted/timeout. workers 4로 줄였지만 quota 늘리면 추가 개선
+
+산출물: `eval/results/ragas_scores.csv`, `ragas_report.json`, `ragas_report.md`.
+
+## 11. 한계 및 향후 개선
+
+- **CRAG grader + rewriter 루프** 명시화 (ADK `LoopAgent`) — 모델 자체 판단 → 결정론적 그래프로
+- **Reranker** (Vertex Ranking API) — 현재 RRF만, cross-encoder 재정렬 미적용
+- **응답 캐시** (Memorystore Redis) — 같은 질의 반복 시 비용/지연 절감
+- **평가 자동화** (RAGAS / 원본 eval 데이터셋) — 검색·답변 품질 정량화

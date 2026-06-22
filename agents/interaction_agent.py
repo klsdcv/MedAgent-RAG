@@ -10,7 +10,7 @@ from google.adk.agents import LlmAgent
 
 from config.settings import settings
 from tools.fda_dur import lookup_interaction
-from tools.vertex_search import search_drugs
+from tools.hybrid_search import hybrid_search_drugs
 
 INSTRUCTION = """\
 당신은 약물 상호작용 확인 전문 에이전트입니다.
@@ -23,7 +23,7 @@ INSTRUCTION = """\
 
 워크플로:
 1. 사용자가 언급한 두 가지 이상의 약물명을 식별합니다.
-2. `search_drugs`로 한국 데이터스토어에서 각 약품의 '상호작용' 정보를 조회합니다.
+2. `hybrid_search_drugs`로 한국 데이터스토어에서 각 약품의 '상호작용' 정보를 조회합니다.
 3. `lookup_interaction(drug_a, drug_b)`로 FDA 사례 데이터도 함께 조회합니다.
 4. 두 소스를 비교하여 다음 형식으로 보고합니다:
    - 한국 e약은요 기재 사항 (있으면)
@@ -40,5 +40,5 @@ def build_agent() -> LlmAgent:
         model=settings.VERTEX_MODEL_GEMINI,
         description="두 가지 이상의 약물 상호작용·금기를 확인하는 에이전트",
         instruction=INSTRUCTION,
-        tools=[search_drugs, lookup_interaction],
+        tools=[hybrid_search_drugs, lookup_interaction],
     )

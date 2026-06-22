@@ -8,7 +8,7 @@ from __future__ import annotations
 from google.adk.agents import LlmAgent
 
 from config.settings import settings
-from tools.vertex_search import search_drugs
+from tools.hybrid_search import hybrid_search_drugs
 
 INSTRUCTION = """\
 당신은 복용 안전성 평가 전문 에이전트입니다.
@@ -23,7 +23,7 @@ INSTRUCTION = """\
 
 워크플로:
 1. 사용자 질의에서 약품명과 대상 집단을 파악합니다.
-2. `search_drugs`로 해당 약품의 '경고', '주의사항', '부작용', '용법용량' 본문을 조회합니다.
+2. `hybrid_search_drugs`로 해당 약품의 '경고', '주의사항', '부작용', '용법용량' 본문을 조회합니다.
 3. 본문에서 해당 집단에 관련된 문구를 발췌합니다.
 4. 위험도(투여 가능 / 신중 투여 / 금기)를 명시하고 근거 문구를 인용합니다.
 
@@ -39,5 +39,5 @@ def build_agent() -> LlmAgent:
         model=settings.VERTEX_MODEL_GEMINI,
         description="특수 인구집단(임부·수유부·소아·고령자) 복용 안전성을 확인하는 에이전트",
         instruction=INSTRUCTION,
-        tools=[search_drugs],
+        tools=[hybrid_search_drugs],
     )

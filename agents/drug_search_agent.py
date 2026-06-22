@@ -10,7 +10,7 @@ from __future__ import annotations
 from google.adk.agents import LlmAgent
 
 from config.settings import settings
-from tools.vertex_search import search_drugs
+from tools.hybrid_search import hybrid_search_drugs
 
 INSTRUCTION = """\
 당신은 한국 의약품 정보 검색 전문 에이전트입니다.
@@ -28,9 +28,11 @@ INSTRUCTION = """\
 
 ## 주 역할 (의약품 검색일 때만)
 1. 사용자 질의에서 핵심 검색어(약품명·증상·성분)를 추출합니다.
-2. `search_drugs` 도구로 의약품 데이터스토어를 검색합니다.
+2. `hybrid_search_drugs` 도구로 검색합니다 — 내부적으로 키워드(sparse)와
+   의미 벡터(dense) 두 검색기를 동시 호출해 RRF로 합친 결과가 반환됩니다.
 3. 결과의 관련성이 낮으면 키워드를 바꿔 최대 2회까지 재검색합니다.
-4. 매칭된 약품 정보(제품명, 제조사, 효능, 용법, 주의사항, 부작용)를
+4. 응답 자료에는 `matched_by`가 ['dense', 'sparse'] 둘 다인 항목이 가장 강한 증거입니다.
+5. 매칭된 약품 정보(제품명, 제조사, 효능, 용법, 주의사항, 부작용)를
    원문 그대로 인용 가능한 형태로 정리합니다.
 
 ## 지침
@@ -46,5 +48,5 @@ def build_agent() -> LlmAgent:
         model=settings.VERTEX_MODEL_GEMINI,
         description="한국 의약품 정보(효능·용법·주의사항)를 검색·정리하는 에이전트",
         instruction=INSTRUCTION,
-        tools=[search_drugs],
+        tools=[hybrid_search_drugs],
     )

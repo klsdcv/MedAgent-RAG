@@ -1,0 +1,26 @@
+{
+  "interaction": {
+    "faithfulness": 0.6665,
+    "answer_relevancy": 0.7101,
+    "context_precision": NaN,
+    "context_recall": 0.75
+  },
+  "safety": {
+    "faithfulness": 0.3395,
+    "answer_relevancy": 0.4934,
+    "context_precision": 0.2,
+    "context_recall": 0.2143
+  },
+  "simple": {
+    "faithfulness": 0.9143,
+    "answer_relevancy": 0.558,
+    "context_precision": 0.0,
+    "context_recall": 0.2857
+  },
+  "_overall": {
+    "faithfulness": 0.6388,
+    "answer_relevancy": 0.581,
+    "context_precision": 0.1667,
+    "context_recall": 0.4
+  }
+}
